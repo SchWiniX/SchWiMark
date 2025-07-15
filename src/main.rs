@@ -1,3 +1,6 @@
+mod cli_handler;
+mod sql_handler;
+
 fn main() {
-	println!("Hello, world!");
+	cli_handler::enter_cli();
 }
