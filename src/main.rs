@@ -1,6 +1,7 @@
-mod cli_handler;
-mod sql_handler;
+mod cli;
+mod sql;
+mod config;
 
 fn main() {
-	cli_handler::enter_cli();
+	cli::start_cli();
 }
