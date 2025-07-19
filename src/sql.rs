@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 use rusqlite::{params, Connection, Result};
 
 pub struct SchWiMark {
@@ -21,6 +21,22 @@ impl SchWiMark {
 	}
 }
 
+impl fmt::Display for SchWiMark {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(
+			f, 
+			"name: {}
+			description: {}
+			url/path: {}
+			default application: {}",
+			self.name,
+			self.description,
+			self.url,
+			self.application
+			)
+	}
+}
+
 pub struct Tag {
 	mark_id: i64,
 	tags: Vec<String>,
@@ -33,6 +49,16 @@ impl Tag {
 			tags: tags,
 		}
 
+	}
+}
+
+impl fmt::Display for Tag{
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(
+			f, 
+			"tags: {:?}",
+			self.tags
+			)
 	}
 }
 
@@ -58,7 +84,14 @@ pub fn create_database(database_path: PathBuf) -> Result<Connection> {
 	Ok(sqlite_connection)
 }
 
-pub fn add_mark(database: &Connection, name: String, description: String, url: String, application: String, tags: Vec<String>) -> Result<(SchWiMark, Tag)> {
+pub fn add_mark(
+	database: &Connection,
+	name: String,
+	description: String,
+	url: String,
+	application: String,
+	tags: Vec<String>
+	) -> Result<(SchWiMark, Tag)> {
 
 	database.execute(
 		"INSERT INTO schwimark (name, description, url, application) VALUES (?1, ?2, ?3, ?4)",
@@ -67,11 +100,9 @@ pub fn add_mark(database: &Connection, name: String, description: String, url: S
 
 	let last_rowid: i64 = database.last_insert_rowid();
 
+	let mut prepare_tags = database.prepare("INSERT INTO tags (markid, tag) VALUES (?1, ?2)")?;
 	for tag in tags.as_slice() {
-		database.execute(
-			"INSERT INTO tags (markid, tag) VALUES (?1, ?2)",
-			params![last_rowid, tag],
-		)?;
+		prepare_tags.execute(params![last_rowid, tag])?;
 	}
 	
 	let new_mark: SchWiMark = SchWiMark::new(last_rowid, name, description, url, application);
@@ -125,11 +156,11 @@ pub fn update_application(database: &Connection, id: i64, application: String) -
 	Ok(())
 }
 
-pub fn add_tag(database: &Connection, id: i64, tag: String) -> Result<()> {
-	database.execute(
-		"INSERT INTO tags (markid, tag) VALUES (?1, ?2)",
-		params![id, tag],
-	)?;
+pub fn add_tags(database: &Connection, id: i64, tags: Vec<String>) -> Result<()> {
+	let mut prepare_tags = database.prepare("INSERT INTO tags (markid, tag) VALUES (?1, ?2)")?;
+	for tag in tags {
+		prepare_tags.execute(params![id, tag])?;
+	}
 
 	Ok(())
 }

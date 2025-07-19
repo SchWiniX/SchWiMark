@@ -22,11 +22,12 @@ struct StartArgs{
 
 #[derive(Subcommand)]
 enum Operation {
-	Delete { id: u32 },
-	Update { id: u32 },
+	Delete,
+	Update,
 	Add,
 	Clear,
 	Open,
+	Show,
 }
 
 #[derive(Parser)]
@@ -56,24 +57,24 @@ pub fn start_cli() {
 	let database = sql::create_database(config.database_file).expect("failed to create/open the database");
 
 	match start_args.operation {
-		Some(Operation::Delete { id }) => {
-			println!("Delete with {id}");
-			//TODO: enter delete cli
+		Some(Operation::Delete) => {
 		}
-		Some(Operation::Update{ id }) => {
-			println!("Update with {id}");
-			//TODO: enter update cli
+		Some(Operation::Update) => {
+			update_cli(&database);
 		}
 		Some(Operation::Add) => {
-			println!("add");
-			//TODO: enter add cli
+			add_cli(&database);
 		}
 		Some(Operation::Clear) => {
-			clear_cli(&database)
+			clear_cli(&database);
 		}
 		Some(Operation::Open) => {
 			println!("Open");
 			//TODO: open DMENU and then execute the selection
+		}
+		Some(Operation::Show) => {
+			println!("Show");
+			//TODO: open DMENU and then print the selection
 		}
 		None => {
 			println!("Subcommand CLI");
@@ -82,7 +83,7 @@ pub fn start_cli() {
 	}
 }
 
-fn database_entry_cli() {
+fn database_entry_cli() -> MarkArgs {
 	let mut input_vec: Vec<String> = vec![];
 
 	input_vec.reserve(5);
@@ -93,6 +94,7 @@ fn database_entry_cli() {
 	input_vec.append(&mut tags_cli());
 
 	//todo call the parser on the interator of input_vec
+	MarkArgs::try_parse_from(input_vec.iter()).unwrap()
 }
 
 fn name_cli() -> String {
@@ -168,9 +170,43 @@ fn tags_cli() -> Vec<String> {
 }
 
 fn update_cli(database: &Connection) {
+
+	//get id through dmenu (TODO)
+	let update_id: i64 = 0;
+
+	//print entry
+	
+	let mut menu_buf: String = String::with_capacity(5);
+	println!("What do you wish to change? (please enter the corresponding letters)
+		name: n)
+		description: d)
+		url/path: u)
+		default application: a)
+		add a tag +)
+		remove a tag -)
+		Hint: if you want to update multiple field you can type both e.g. \"nu\" will enter both the name update menu and the url/path update menu"
+		);
+	eprint!("field>");
+
+	std::io::stdin().read_line(&mut menu_buf).expect("Could not parse clear confirmation");
+
+	for c in menu_buf.chars() {
+		match c {
+			'n' => { sql::update_name(database, update_id, name_cli()).unwrap(); }
+			'd' => { sql::update_description(database, update_id, description_cli()).unwrap(); }
+			'u' => { sql::update_url(database, update_id, url_cli()).unwrap(); }
+			'a' => { sql::update_application(database, update_id, application_cli()).unwrap(); }
+			'+' => { sql::add_tags(database, update_id, tags_cli()).unwrap(); }
+			'-' => { /*TODO: call dmenu with all tags */ }
+			_ => { continue; }
+		}
+	}
+
 }
 
 fn add_cli(database: &Connection) {
+	let mark_entry = database_entry_cli();
+	let (_schwimark, _tags): (sql::SchWiMark, sql::Tag) = sql::add_mark(database, mark_entry.name, mark_entry.description, mark_entry.url, mark_entry.application, mark_entry.tags).unwrap();
 }
 
 fn clear_cli(database: &Connection) {
