@@ -1,8 +1,6 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::{default, env}; //needed later for std::env::consts::OS to have special behavior on WINDOWS / MACOS
-use std::fs::{OpenOptions, File};
-use xdg::BaseDirectories;
+use std::fs::File;
 use serde::{Serialize, Deserialize};
 
 const CONFIG_FILE_NAME: &str = "config.toml";
@@ -32,6 +30,7 @@ impl Config {
 		assert!(self.config_file.to_str().unwrap() != "");
 		let mut config_file: File = File::options()
 			.read(true)
+			.write(true)
 			.create(true)
 			.append(true)
 			.open(&self.config_file)
@@ -40,6 +39,11 @@ impl Config {
 		let mut config_contents = String::new();
 		config_file.read_to_string(&mut config_contents)
 			.expect("failed to write config file to string");
+
+		if config_contents.is_empty() {
+			let default_config_contents: &str = &toml::to_string(&self).unwrap();
+			config_file.write(default_config_contents.as_bytes()).unwrap();
+		}
 
 		let read_config: Config = toml::from_str(&config_contents)
 			.expect("failed to parse config file");

@@ -1,5 +1,6 @@
 use crate::config;
 use crate::sql;
+use crate::dmenu_handler;
 
 use std::path::PathBuf;
 use clap::{Parser, Subcommand};
@@ -54,7 +55,9 @@ pub fn start_cli() {
 		start_args.dmenu_command,
 		);
 
-	let database = sql::create_database(config.database_file).expect("failed to create/open the database");
+	let database = sql::create_database(&config.database_file).expect("failed to create/open the database");
+
+	dmenu_handler::open_search(&config, &mut vec!["hi".to_string(), "ho".to_string(), "he".to_string()]);
 
 	match start_args.operation {
 		Some(Operation::Delete) => {

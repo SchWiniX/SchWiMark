@@ -62,7 +62,7 @@ impl fmt::Display for Tag{
 	}
 }
 
-pub fn create_database(database_path: PathBuf) -> Result<Connection> {
+pub fn create_database(database_path: &PathBuf) -> Result<Connection> {
 	assert!(database_path.to_str().unwrap() != "");
 	let sqlite_connection: Connection = Connection::open(database_path)?;
 
