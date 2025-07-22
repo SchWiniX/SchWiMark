@@ -5,7 +5,9 @@ use serde::{Serialize, Deserialize};
 
 const CONFIG_FILE_NAME: &str = "config.toml";
 const DATABASE_FILE_NAME: &str = "schwimark.db";
-const DEFAULT_DMENU_COMMAND: &str = "dmenu_run";
+const DEFAULT_DMENU_COMMAND: &str = "dmenu";
+const DEFAULT_DMENU_MARK_SEARCH_ARGS: &str = "";
+const DEFAULT_DMENU_TAG_SEARCH_ARGS: &str = "";
 
 #[derive(Serialize, Deserialize)]
 #[serde[default]]
@@ -15,6 +17,8 @@ pub struct Config {
 
 	pub database_file: PathBuf,
 	pub dmenu_command: String,
+	pub dmenu_mark_search_args: String,
+	pub dmenu_tag_search_args: String,
 }
 
 impl Config {
@@ -22,7 +26,9 @@ impl Config {
 		Config {
 			config_file: config_file,
 			database_file: get_default_database_file(),
-			dmenu_command: DEFAULT_DMENU_COMMAND.to_string()
+			dmenu_command: DEFAULT_DMENU_COMMAND.to_string(),
+			dmenu_mark_search_args: DEFAULT_DMENU_MARK_SEARCH_ARGS.to_string(),
+			dmenu_tag_search_args: DEFAULT_DMENU_MARK_SEARCH_ARGS.to_string(),
 		}
 	}
 
@@ -59,7 +65,9 @@ impl Default for Config {
 		Config {
 			config_file: get_default_config_file(),
 			database_file: get_default_database_file(),
-			dmenu_command: DEFAULT_DMENU_COMMAND.to_string()
+			dmenu_command: DEFAULT_DMENU_COMMAND.to_string(),
+			dmenu_mark_search_args: DEFAULT_DMENU_MARK_SEARCH_ARGS.to_string(),
+			dmenu_tag_search_args: DEFAULT_DMENU_MARK_SEARCH_ARGS.to_string(),
 		}
 	}
 }

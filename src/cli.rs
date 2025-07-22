@@ -57,13 +57,11 @@ pub fn start_cli() {
 
 	let database = sql::create_database(&config.database_file).expect("failed to create/open the database");
 
-	dmenu_handler::open_search(&config, &mut vec!["hi".to_string(), "ho".to_string(), "he".to_string()]);
-
 	match start_args.operation {
 		Some(Operation::Delete) => {
 		}
 		Some(Operation::Update) => {
-			update_cli(&database);
+			update_cli(&database, &config);
 		}
 		Some(Operation::Add) => {
 			add_cli(&database);
@@ -72,12 +70,22 @@ pub fn start_cli() {
 			clear_cli(&database);
 		}
 		Some(Operation::Open) => {
-			println!("Open");
-			//TODO: open DMENU and then execute the selection
+			let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
+			let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
+				Some(s) => { s }
+				None => { return }
+			};
+			let id: i64 = selected_item.split_once("\t").unwrap().0.parse::<i64>().unwrap();
+			sql::open_mark(&database, id).expect("failed to open mark")
 		}
 		Some(Operation::Show) => {
-			println!("Show");
-			//TODO: open DMENU and then print the selection
+			let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
+			let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
+				Some(s) => { s }
+				None => { return }
+			};
+			let id: i64 = selected_item.split_whitespace().nth(0).unwrap().parse::<i64>().unwrap();
+			sql::show_mark(&database, id).expect("failed to print mark")
 		}
 		None => {
 			println!("Subcommand CLI");
@@ -89,14 +97,14 @@ pub fn start_cli() {
 fn database_entry_cli() -> MarkArgs {
 	let mut input_vec: Vec<String> = vec![];
 
-	input_vec.reserve(5);
+	input_vec.reserve(6);
+	input_vec.push("".to_string());
 	input_vec.push(name_cli());
 	input_vec.push(description_cli());
 	input_vec.push(url_cli());
 	input_vec.push(application_cli());
 	input_vec.append(&mut tags_cli());
 
-	//todo call the parser on the interator of input_vec
 	MarkArgs::try_parse_from(input_vec.iter()).unwrap()
 }
 
@@ -108,7 +116,7 @@ fn name_cli() -> String {
 		println!("Enter the name of the new SchWiMark");
 		eprint!("name> ");
 		std::io::stdin().read_line(&mut name_buf).expect("Could not parse name input");
-		name_buf.trim().to_string();
+		if name_buf.ends_with('\n') { name_buf.pop(); };
 		if name_buf.is_empty() {
 			println!("name cannot be empty");
 			continue;
@@ -122,7 +130,9 @@ fn description_cli() -> String {
 	println!("Enter the description of the new SchWiMark");
 	eprint!("description> ");
 	std::io::stdin().read_line(&mut description_buf).expect("Could not parse description input");
-	description_buf.trim().to_string()
+	description_buf.trim().to_string();
+	if description_buf.ends_with('\n') { description_buf.pop(); };
+	description_buf
 }
 
 fn url_cli() -> String {
@@ -134,6 +144,7 @@ fn url_cli() -> String {
 		eprint!("url/path> ");
 		std::io::stdin().read_line(&mut url_buf).expect("Could not parse description input");
 		url_buf.trim().to_string();
+		if url_buf.ends_with('\n') { url_buf.pop(); };
 		if url_buf.is_empty() {
 			println!("url cannot be empty");
 			continue;
@@ -148,7 +159,8 @@ fn application_cli() -> String {
 	println!("Enter the default application you want the SchwiMark to be opened with (leave empty to use default application):");
 	eprint!("application> ");
 	std::io::stdin().read_line(&mut application_buf).expect("Could not parse description input");
-	application_buf.trim().to_string()
+	if application_buf.ends_with('\n') { application_buf.pop(); };
+	application_buf
 }
 
 fn tags_cli() -> Vec<String> {
@@ -159,7 +171,9 @@ fn tags_cli() -> Vec<String> {
 		println!("Enter a tag of the new SchWiMark enter nothing to continue");
 		eprint!("tag> ");
 		std::io::stdin().read_line(&mut tag_buf).expect("Could not parse the tag input");
+		if tag_buf.ends_with('\n') { tag_buf.pop(); };
 		tag_buf.trim().to_string();
+
 		if tag_buf.is_empty() {
 			break;
 		}
@@ -172,12 +186,16 @@ fn tags_cli() -> Vec<String> {
 	return tag_vec
 }
 
-fn update_cli(database: &Connection) {
+fn update_cli(database: &Connection, config: &config::Config) {
 
-	//get id through dmenu (TODO)
-	let update_id: i64 = 0;
+	let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
+	let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
+		Some (s) => { s }
+		None => { return }
+	};
+	let update_id: i64 = selected_item.split_once("\t").unwrap().0.parse::<i64>().unwrap();
 
-	//print entry
+	sql::show_mark(&database, update_id).expect("failed to print mark");
 	
 	let mut menu_buf: String = String::with_capacity(5);
 	println!("What do you wish to change? (please enter the corresponding letters)
@@ -195,12 +213,44 @@ fn update_cli(database: &Connection) {
 
 	for c in menu_buf.chars() {
 		match c {
-			'n' => { sql::update_name(database, update_id, name_cli()).unwrap(); }
-			'd' => { sql::update_description(database, update_id, description_cli()).unwrap(); }
-			'u' => { sql::update_url(database, update_id, url_cli()).unwrap(); }
-			'a' => { sql::update_application(database, update_id, application_cli()).unwrap(); }
-			'+' => { sql::add_tags(database, update_id, tags_cli()).unwrap(); }
-			'-' => { /*TODO: call dmenu with all tags */ }
+			'n' => { 
+				match sql::update_name(database, update_id, name_cli()) {
+					Ok(n) => { return n; }
+					Err(e) => { panic!("sql failed with error \"{}\"", e) }
+				}
+			}
+			'd' => {
+				match sql::update_description(database, update_id, description_cli()) {
+					Ok(n) => { return n; }
+					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
+				}
+			}
+			'u' => {
+				match sql::update_url(database, update_id, url_cli()) {
+					Ok(n) => { return n; }
+					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
+				}
+			}
+			'a' => {
+				match sql::update_application(database, update_id, application_cli()) {
+					Ok(n) => { return n; }
+					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
+				}
+			}
+			'+' => {
+				match sql::add_tags(database, update_id, tags_cli()) {
+					Ok(n) => { return n; }
+					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
+				}
+			}
+			'-' => {
+				loop {
+					let mut tag_entries: Vec<String> = sql::get_tags(&database, update_id).expect("failed to query tags");
+					let selected_tag: String = dmenu_handler::open_tag_search(&config, &mut tag_entries);
+					if selected_tag.is_empty() { break; }
+					sql::delete_tag(&database, update_id, selected_tag).expect("failed to delete the tag from the database");
+				} 
+			}
 			_ => { continue; }
 		}
 	}
@@ -230,14 +280,11 @@ fn clear_cli(database: &Connection) {
 		};
 
 		if conf_char == 'y' || conf_char == 'Y' {
-			println!("cleared");
 			sql::clear_database(database).expect("failed to clear database");
 			break;
 		} else if conf_char == 'n' || conf_char == 'N' {
-			println!("break");
 			break;
 		} else {
-			println!("continue");
 			continue;
 		}
 	}

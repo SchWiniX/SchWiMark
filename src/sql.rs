@@ -1,3 +1,4 @@
+use open::{that, with_command, with_in_background};
 use std::{fmt, path::PathBuf};
 use rusqlite::{params, Connection, Result};
 
@@ -38,14 +39,14 @@ impl fmt::Display for SchWiMark {
 }
 
 pub struct Tag {
-	mark_id: i64,
+	markid: i64,
 	tags: Vec<String>,
 }
 
 impl Tag {
-	fn new(mark_id: i64, tags: Vec<String>) -> Tag { 
+	fn new(markid: i64, tags: Vec<String>) -> Tag { 
 		Tag {
-			mark_id: mark_id,
+			markid: markid,
 			tags: tags,
 		}
 
@@ -72,12 +73,12 @@ pub fn create_database(database_path: &PathBuf) -> Result<Connection> {
 			name TEXT NOT NULL UNIQUE,
 			description TEXT NOT NULL,
 			url TEXT NOT NULL,
-			application TEXT
+			application TEXT NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS tags (
 			markid INTEGER,
 			tag TEXT NOT NULL,
-			FOREIGN KEY (markid) REFERENCES mark(markid) ON DELETE CASCADE
+			FOREIGN KEY (markid) REFERENCES schwimark(markid) ON DELETE CASCADE
 		);",
 	).unwrap();
 
@@ -92,6 +93,8 @@ pub fn add_mark(
 	application: String,
 	tags: Vec<String>
 	) -> Result<(SchWiMark, Tag)> {
+
+	println!("{}, {}, {}, {}", name, description, url, application);
 
 	database.execute(
 		"INSERT INTO schwimark (name, description, url, application) VALUES (?1, ?2, ?3, ?4)",
@@ -113,7 +116,7 @@ pub fn add_mark(
 
 pub fn delete_mark(database: &Connection, id: i64) -> Result<()> {
 	database.execute(
-		"DELETE FROM schwimark s WHERE s.id=?1",
+		"DELETE FROM schwimark WHERE schwimark.markid = ?1",
 		params![id],
 	)?;
 
@@ -122,7 +125,7 @@ pub fn delete_mark(database: &Connection, id: i64) -> Result<()> {
 
 pub fn update_name(database: &Connection, id: i64, name: String) -> Result<()> {
 	database.execute(
-		"UPDATE schwimark s SET s.name=?1 WHERE s.id=?2",
+		"UPDATE schwimark SET name = ?1 WHERE markid = ?2",
 		params![name, id],
 	)?;
 
@@ -131,7 +134,7 @@ pub fn update_name(database: &Connection, id: i64, name: String) -> Result<()> {
 
 pub fn update_description(database: &Connection, id: i64, description: String) -> Result<()> {
 	database.execute(
-		"UPDATE schwimark s SET s.description=?1 WHERE s.id=?2",
+		"UPDATE schwimark SET description = ?1 WHERE markid = ?2",
 		params![description, id],
 	)?;
 
@@ -140,7 +143,7 @@ pub fn update_description(database: &Connection, id: i64, description: String) -
 
 pub fn update_url(database: &Connection, id: i64, url: String) -> Result<()> {
 	database.execute(
-		"UPDATE schwimark s SET s.url=?1 WHERE s.id=?2",
+		"UPDATE schwimark SET url = ?1 WHERE markid = ?2",
 		params![url, id],
 	)?;
 
@@ -148,8 +151,9 @@ pub fn update_url(database: &Connection, id: i64, url: String) -> Result<()> {
 }
 
 pub fn update_application(database: &Connection, id: i64, application: String) -> Result<()> {
+	println!("{}, {}", application, id);
 	database.execute(
-		"UPDATE schwimark s SET s.application=?1 WHERE s.id=?2",
+		"UPDATE schwimark SET application = ?1 WHERE markid = ?2",
 		params![application, id],
 	)?;
 
@@ -167,7 +171,7 @@ pub fn add_tags(database: &Connection, id: i64, tags: Vec<String>) -> Result<()>
 
 pub fn delete_tag(database: &Connection, id: i64, tag: String) -> Result<()> {
 	database.execute(
-		"DELETE FROM tags t WHERE t.id=?1 AND t.tag=?2",
+		"DELETE FROM tags WHERE tags.markid=?1 AND tags.tag=?2",
 		params![id, tag],
 	)?;
 
@@ -177,5 +181,102 @@ pub fn delete_tag(database: &Connection, id: i64, tag: String) -> Result<()> {
 pub fn clear_database(database: &Connection) -> Result<()> {
 	database.execute("DELETE FROM schwimark", [])?;
 	database.execute("DELETE FROM tags", [])?;
+	Ok(())
+}
+
+pub fn get_marks_short(database: &Connection) -> Result<Vec<String>> {
+	let mut query = database.prepare("
+		SELECT schwimark.markid, schwimark.name, STRING_AGG(tags.tag, \"\t\")
+		FROM schwimark, tags
+		WHERE schwimark.markid == tags.markid
+		GROUP BY schwimark.markid ")?;
+
+	let mark_iter = query.query_map([], |row| {
+		Ok(
+			row.get::<usize, i64>(0)?.to_string()
+				+ "\t" + &row.get::<usize, String>(1)?
+				+ "\t" + &row.get::<usize, String>(2)?
+			)
+		})?; //wow this is wack
+
+	Ok(mark_iter.map(|e| e.unwrap()).collect())
+}
+
+pub fn get_tags(database: &Connection, id: i64) -> Result<Vec<String>> {
+	let mut query = database.prepare("SELECT DISTINCT(tag) FROM tags WHERE tags.markid = ?1")?;
+	let tag_iter = query.query_map(params![id], |row| {
+		row.get::<usize, String>(0)
+	})?;
+	
+	Ok(tag_iter.map(|e| e.unwrap()).collect())
+}
+
+pub fn get_all_tags(database: &Connection) -> Result<Vec<String>> {
+	let mut query = database.prepare("SELECT DISTINCT(tag) FROM tags")?;
+	let tag_iter = query.query_map([], |row| {
+		row.get::<usize, String>(0)
+	})?;
+	
+	Ok(tag_iter.map(|e| e.unwrap()).collect())
+}
+
+pub fn show_mark(database: &Connection, id: i64) -> Result<()> {
+	let mut name: String = Default::default();
+	let mut desc: String = Default::default();
+	let mut url: String = Default::default();
+	let mut app: String = Default::default();
+	let mut tags: String = Default::default();
+
+	database.query_row("
+		SELECT schwimark.markid, schwimark.name, schwimark.description, schwimark.url, schwimark.application, STRING_AGG(tags.tag, \"\t\")
+		FROM schwimark, tags
+		WHERE schwimark.markid == tags.markid AND schwimark.markid == ?1
+		GROUP BY schwimark.markid",
+		[id],
+		|row| {
+			name = row.get::<usize, String>(1)?;
+			desc = row.get::<usize, String>(2)?;
+			url = row.get::<usize, String>(3)?;
+			app = row.get::<usize, String>(4)?;
+			tags = row.get::<usize, String>(5)?;
+			row.get::<usize, i64>(0)
+		}
+	)?;
+
+	println!(
+		"{0: <10} | {1: <30} | {2: <70} | {3: <30} | {4: <30}",
+		"id", "name", "description", "application", "tags"
+	);
+	println!(
+		"{0: <10} | {1: <30} | {2: <70} | {3: <30} | {4: <30}",
+		id, name, desc, app, tags,
+	);
+	Ok(())
+}
+
+pub fn open_mark(database: &Connection, id: i64) -> Result<()> {
+	let mut url: String = Default::default();
+	let mut application: String = Default::default();
+	database.query_row("
+		SELECT schwimark.url, schwimark.application
+		FROM schwimark
+		WHERE schwimark.markid == ?1
+		GROUP BY schwimark.markid",
+		[id],
+		|row| {
+			url = row.get::<usize, String>(0)?;
+			application = row.get::<usize, String>(1)?;
+			Ok(())
+		},
+	)?;
+
+	if application.is_empty() {
+		that(&url).expect("failed to open");
+	} else {
+		match with_command(&url, application).spawn() {
+			Ok(_) => {}
+			Err(_) => { that(&url).expect("failed to open both with specified application and default application"); }
+		}
+	}
 	Ok(())
 }
