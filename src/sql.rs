@@ -1,4 +1,6 @@
-use open::{that, with_command, with_in_background};
+use open::{that, with_command};
+use std::collections::HashMap;
+use std::process::Stdio;
 use std::{fmt, path::PathBuf};
 use rusqlite::{params, Connection, Result};
 
@@ -79,7 +81,9 @@ pub fn create_database(database_path: &PathBuf) -> Result<Connection> {
 			markid INTEGER,
 			tag TEXT NOT NULL,
 			FOREIGN KEY (markid) REFERENCES schwimark(markid) ON DELETE CASCADE
-		);",
+		);
+		PRAGMA foreign_keys = ON;
+		",
 	).unwrap();
 
 	Ok(sqlite_connection)
@@ -93,8 +97,6 @@ pub fn add_mark(
 	application: String,
 	tags: Vec<String>
 	) -> Result<(SchWiMark, Tag)> {
-
-	println!("{}, {}, {}, {}", name, description, url, application);
 
 	database.execute(
 		"INSERT INTO schwimark (name, description, url, application) VALUES (?1, ?2, ?3, ?4)",
@@ -151,7 +153,6 @@ pub fn update_url(database: &Connection, id: i64, url: String) -> Result<()> {
 }
 
 pub fn update_application(database: &Connection, id: i64, application: String) -> Result<()> {
-	println!("{}, {}", application, id);
 	database.execute(
 		"UPDATE schwimark SET application = ?1 WHERE markid = ?2",
 		params![application, id],
@@ -185,21 +186,48 @@ pub fn clear_database(database: &Connection) -> Result<()> {
 }
 
 pub fn get_marks_short(database: &Connection) -> Result<Vec<String>> {
-	let mut query = database.prepare("
-		SELECT schwimark.markid, schwimark.name, STRING_AGG(tags.tag, \"\t\")
-		FROM schwimark, tags
-		WHERE schwimark.markid == tags.markid
-		GROUP BY schwimark.markid ")?;
+	let mut schwimark_query = database.prepare("
+		SELECT schwimark.markid, schwimark.name
+		FROM schwimark"
+	)?;
 
-	let mark_iter = query.query_map([], |row| {
-		Ok(
+	let mut mark_hashmap: HashMap<i64, String> = HashMap::new();
+	let query_errors = schwimark_query.query_map([], |row| {
+		mark_hashmap.insert(
+			row.get::<usize, i64>(0)?,
 			row.get::<usize, i64>(0)?.to_string()
 				+ "\t" + &row.get::<usize, String>(1)?
-				+ "\t" + &row.get::<usize, String>(2)?
-			)
-		})?; //wow this is wack
+		);
+		Ok(())
+	})?;
 
-	Ok(mark_iter.map(|e| e.unwrap()).collect())
+	for err in query_errors {
+		err.unwrap();
+	} // this is straigth up bullshittery
+
+	let mut tags_query = database.prepare("
+		SELECT tags.markid, STRING_AGG(tags.tag, \"\t\")
+		FROM tags
+		GROUP BY tags.markid")?;
+
+	let query_tags_error = tags_query.query_map([], |row| {
+		let row_str: String = match mark_hashmap.get(&row.get::<usize, i64>(0)?) {
+			Some(ent) => { ent.to_string() }
+			None => { return Ok(()); } //this should prob be error handeled cause this would mean a tags markid entry exists for which not schwimark in the schwimark tabel
+		};
+		mark_hashmap.insert(
+			row.get::<usize, i64>(0)?,
+			row_str + "\t" + &row.get::<usize, String>(1)?
+		);
+
+		Ok(())
+	})?;
+
+	for err in query_tags_error {
+		err.unwrap();
+	}
+
+	Ok(mark_hashmap.into_values().collect())
 }
 
 pub fn get_tags(database: &Connection, id: i64) -> Result<Vec<String>> {
@@ -211,13 +239,72 @@ pub fn get_tags(database: &Connection, id: i64) -> Result<Vec<String>> {
 	Ok(tag_iter.map(|e| e.unwrap()).collect())
 }
 
-pub fn get_all_tags(database: &Connection) -> Result<Vec<String>> {
-	let mut query = database.prepare("SELECT DISTINCT(tag) FROM tags")?;
-	let tag_iter = query.query_map([], |row| {
-		row.get::<usize, String>(0)
+pub fn show_all_marks(database: &Connection) -> Result<()> {
+	let mut marks: HashMap<i64, (String, String, String, String, String)> = Default::default();
+
+	let mut schwimark_query = database.prepare("
+		SELECT schwimark.markid, schwimark.name, schwimark.description, schwimark.url, schwimark.application
+		FROM schwimark"
+	)?;
+
+	let query_errors = schwimark_query.query_map([], |row| {
+		let id: i64 = row.get::<usize, i64>(0)?;
+		marks.insert(
+			id,
+			(
+				row.get::<usize, String>(1)?,
+				row.get::<usize, String>(2)?,
+				row.get::<usize, String>(3)?,
+				row.get::<usize, String>(4)?,
+				"".to_string(),
+			)
+		);
+		Ok(())
 	})?;
-	
-	Ok(tag_iter.map(|e| e.unwrap()).collect())
+
+	for err in query_errors {
+		err.unwrap();
+	} // this is straigth up bullshittery
+
+	let mut tags_query = database.prepare("
+		SELECT tags.markid, STRING_AGG(tags.tag, \", \")
+		FROM tags
+		GROUP BY tags.markid")?;
+
+	let query_tags_error = tags_query.query_map([], |row| {
+		let id: i64 = row.get::<usize, i64>(0)?;
+		let curr_entry = match marks.get(&id) {
+			Some(m) => { m.clone() }
+			None => { return Ok(()) }
+		};
+		marks.insert(
+			id,
+			(
+				curr_entry.0,
+				curr_entry.1,
+				curr_entry.2,
+				curr_entry.3,
+				row.get::<usize, String>(1)?,
+			)
+		);
+		Ok(())
+	})?;
+
+	for err in query_tags_error {
+		err.unwrap();
+	}
+
+	println!(
+		"{0: <3} | {1: <20} | {2: <80} | {3: <50} | {4: <20} | {5: <0}",
+		"id", "name", "description", "url", "application", "tags"
+	);
+	for (id, m) in marks.iter() {
+		println!(
+			"{0: <3} | {1: <20} | {2: <80} | {3: <50} | {4: <20} | {5: <0}",
+			id, m.0, m.1, m.2, m.3, m.4,
+		);
+	}
+	Ok(())
 }
 
 pub fn show_mark(database: &Connection, id: i64) -> Result<()> {
@@ -228,9 +315,9 @@ pub fn show_mark(database: &Connection, id: i64) -> Result<()> {
 	let mut tags: String = Default::default();
 
 	database.query_row("
-		SELECT schwimark.markid, schwimark.name, schwimark.description, schwimark.url, schwimark.application, STRING_AGG(tags.tag, \"\t\")
-		FROM schwimark, tags
-		WHERE schwimark.markid == tags.markid AND schwimark.markid == ?1
+		SELECT schwimark.markid, schwimark.name, schwimark.description, schwimark.url, schwimark.application
+		FROM schwimark
+		WHERE schwimark.markid == ?1
 		GROUP BY schwimark.markid",
 		[id],
 		|row| {
@@ -238,18 +325,34 @@ pub fn show_mark(database: &Connection, id: i64) -> Result<()> {
 			desc = row.get::<usize, String>(2)?;
 			url = row.get::<usize, String>(3)?;
 			app = row.get::<usize, String>(4)?;
-			tags = row.get::<usize, String>(5)?;
-			row.get::<usize, i64>(0)
+			Ok(())
 		}
 	)?;
 
+	let tag_query_result = database.query_row("
+		SELECT STRING_AGG(tags.tag, \"\t\")
+		FROM tags
+		WHERE tags.markid == ?1
+		GROUP BY tags.markid",
+		[id],
+		|row| {
+			tags = row.get::<usize, String>(0)?;
+			Ok(())
+		}
+	);
+
+	match tag_query_result {
+		Ok(_) => {}
+		Err(_) => { tags = "".to_string(); }
+	}
+
 	println!(
-		"{0: <10} | {1: <30} | {2: <70} | {3: <30} | {4: <30}",
-		"id", "name", "description", "application", "tags"
+		"{0: <3} | {1: <20} | {2: <80} | {3: <50} | {4: <20} | {5: <0}",
+		"id", "name", "description", "url", "application", "tags"
 	);
 	println!(
-		"{0: <10} | {1: <30} | {2: <70} | {3: <30} | {4: <30}",
-		id, name, desc, app, tags,
+		"{0: <3} | {1: <20} | {2: <80} | {3: <50} | {4: <20} | {5: <0}",
+		id, name, desc, url, app, tags,
 	);
 	Ok(())
 }
@@ -273,7 +376,7 @@ pub fn open_mark(database: &Connection, id: i64) -> Result<()> {
 	if application.is_empty() {
 		that(&url).expect("failed to open");
 	} else {
-		match with_command(&url, application).spawn() {
+		match with_command(&url, application).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
 			Ok(_) => {}
 			Err(_) => { that(&url).expect("failed to open both with specified application and default application"); }
 		}

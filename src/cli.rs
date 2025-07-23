@@ -9,26 +9,45 @@ use rusqlite::{Connection};
 #[derive(Parser)]
 struct StartArgs{
 	#[command(subcommand)]
-	operation: Option<Operation>,
+	operation: Operation,
 
+	/// specify a config path to be used
 	#[arg(short, long="config")]
 	config_path: Option<PathBuf>,
 
+	/// specify a path to a SchWiMark database to be used
 	#[arg(short, long="database")]
 	database_path: Option<PathBuf>,
 
+	/// the command to which the list of bookmarks is piped
 	#[arg(short='m', long)]
 	dmenu_command: Option<String>,
+
+	/// additional arguments used when searching through marks
+	#[arg(short='s', long)]
+	dmenu_mark_arguments: Option<String>,
+
+	/// additional arguments used when searching through tags
+	#[arg(short='t', long)]
+	dmenu_tag_arguments: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum Operation {
+	/// Opens the selection and will delete the entry that was selected
 	Delete,
+	/// Opens the selection and will continue to the update cli for the entry that was selected
 	Update,
+	/// Opens the add SchWiMark cli
 	Add,
+	/// Clears the database (WARNING: all data will be lost)
 	Clear,
+	/// Opens the selection and will attempt to open the url/path specified
 	Open,
+	/// Opens the selection and will print out the selection made
 	Show,
+	/// will print out all SchWImarks to the console
+	ShowAll,
 }
 
 #[derive(Parser)]
@@ -53,45 +72,51 @@ pub fn start_cli() {
 	config.load_config(
 		start_args.database_path,
 		start_args.dmenu_command,
+		start_args.dmenu_mark_arguments,
+		start_args.dmenu_tag_arguments,
 		);
 
 	let database = sql::create_database(&config.database_file).expect("failed to create/open the database");
 
 	match start_args.operation {
-		Some(Operation::Delete) => {
+		Operation::Delete => {
+			let id: i64 = start_mark_selection(&database, &config);
+			if id < 0 { return; }
+			sql::delete_mark(&database, id).expect("failed to delete this mark");
 		}
-		Some(Operation::Update) => {
+		Operation::Update => {
 			update_cli(&database, &config);
 		}
-		Some(Operation::Add) => {
+		Operation::Add => {
 			add_cli(&database);
 		}
-		Some(Operation::Clear) => {
+		Operation::Clear => {
 			clear_cli(&database);
 		}
-		Some(Operation::Open) => {
-			let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
-			let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
-				Some(s) => { s }
-				None => { return }
-			};
-			let id: i64 = selected_item.split_once("\t").unwrap().0.parse::<i64>().unwrap();
+		Operation::Open => {
+			let id: i64 = start_mark_selection(&database, &config);
+			if id < 0 { return; }
 			sql::open_mark(&database, id).expect("failed to open mark")
 		}
-		Some(Operation::Show) => {
-			let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
-			let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
-				Some(s) => { s }
-				None => { return }
-			};
-			let id: i64 = selected_item.split_whitespace().nth(0).unwrap().parse::<i64>().unwrap();
+		Operation::Show => {
+			let id: i64 = start_mark_selection(&database, &config);
+			if id < 0 { return; }
 			sql::show_mark(&database, id).expect("failed to print mark")
 		}
-		None => {
-			println!("Subcommand CLI");
-			//TODO enter submenu cli
+		Operation::ShowAll => {
+			sql::show_all_marks(&database).unwrap();
 		}
 	}
+}
+
+fn start_mark_selection(database: &Connection, config: &config::Config) -> i64 {
+	let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
+	let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
+		Ok(s) => { s }
+		Err(e) => { println!("{}", e); return -1; }
+	};
+	if selected_item.is_empty() { return -1; }
+	selected_item.split_whitespace().nth(0).unwrap().parse::<i64>().unwrap()
 }
 
 fn database_entry_cli() -> MarkArgs {
@@ -190,24 +215,25 @@ fn update_cli(database: &Connection, config: &config::Config) {
 
 	let mut entries: Vec<String> = sql::get_marks_short(&database).expect("failed to query marks");
 	let selected_item: String = match dmenu_handler::open_mark_search(&config, &mut entries) {
-		Some (s) => { s }
-		None => { return }
+		Ok(s) => { s }
+		Err(e) => { println!("{}", e); return; }
 	};
+	if selected_item.is_empty() { return; }
 	let update_id: i64 = selected_item.split_once("\t").unwrap().0.parse::<i64>().unwrap();
 
 	sql::show_mark(&database, update_id).expect("failed to print mark");
 	
 	let mut menu_buf: String = String::with_capacity(5);
-	println!("What do you wish to change? (please enter the corresponding letters)
-		name: n)
-		description: d)
-		url/path: u)
-		default application: a)
-		add a tag +)
-		remove a tag -)
+	println!("What do you wish to change? (please enter the corresponding letters)\n\
+		name: n)\n\
+		description: d)\n\
+		url/path: u)\n\
+		default application: a)\n\
+		add a tag +)\n\
+		remove a tag -)\n\
 		Hint: if you want to update multiple field you can type both e.g. \"nu\" will enter both the name update menu and the url/path update menu"
 		);
-	eprint!("field>");
+	eprint!("field> ");
 
 	std::io::stdin().read_line(&mut menu_buf).expect("Could not parse clear confirmation");
 
@@ -215,44 +241,48 @@ fn update_cli(database: &Connection, config: &config::Config) {
 		match c {
 			'n' => { 
 				match sql::update_name(database, update_id, name_cli()) {
-					Ok(n) => { return n; }
+					Ok(_) => {}
 					Err(e) => { panic!("sql failed with error \"{}\"", e) }
 				}
 			}
 			'd' => {
 				match sql::update_description(database, update_id, description_cli()) {
-					Ok(n) => { return n; }
+					Ok(_) => {}
 					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
 				}
 			}
 			'u' => {
 				match sql::update_url(database, update_id, url_cli()) {
-					Ok(n) => { return n; }
+					Ok(_) => {}
 					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
 				}
 			}
 			'a' => {
 				match sql::update_application(database, update_id, application_cli()) {
-					Ok(n) => { return n; }
+					Ok(_) => {}
 					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
 				}
 			}
 			'+' => {
 				match sql::add_tags(database, update_id, tags_cli()) {
-					Ok(n) => { return n; }
+					Ok(_) => {}
 					Err(e) => { panic!("sql failed with error: \"{}\"", e); }
 				}
 			}
 			'-' => {
 				loop {
 					let mut tag_entries: Vec<String> = sql::get_tags(&database, update_id).expect("failed to query tags");
-					let selected_tag: String = dmenu_handler::open_tag_search(&config, &mut tag_entries);
-					if selected_tag.is_empty() { break; }
+					let mut selected_tag: String = match dmenu_handler::open_tag_search(&config, &mut tag_entries) {
+						Ok(r) => { r }
+						Err(_) => { break; }
+					};
+					if selected_tag.ends_with('\n') { selected_tag.pop(); };
+					if selected_item.is_empty() { return; }
 					sql::delete_tag(&database, update_id, selected_tag).expect("failed to delete the tag from the database");
 				} 
 			}
 			_ => { continue; }
-		}
+		};
 	}
 
 }

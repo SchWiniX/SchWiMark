@@ -28,11 +28,16 @@ impl Config {
 			database_file: get_default_database_file(),
 			dmenu_command: DEFAULT_DMENU_COMMAND.to_string(),
 			dmenu_mark_search_args: DEFAULT_DMENU_MARK_SEARCH_ARGS.to_string(),
-			dmenu_tag_search_args: DEFAULT_DMENU_MARK_SEARCH_ARGS.to_string(),
+			dmenu_tag_search_args: DEFAULT_DMENU_TAG_SEARCH_ARGS.to_string(),
 		}
 	}
 
-	pub fn load_config(&mut self, database_file: Option<PathBuf>, dmenu_command: Option<String>) {
+	pub fn load_config(
+		&mut self, database_file: Option<PathBuf>,
+		dmenu_command: Option<String>,
+		mark_args: Option<String>,
+		tag_args: Option<String>,
+		) {
 		assert!(self.config_file.to_str().unwrap() != "");
 		let mut config_file: File = File::options()
 			.read(true)
@@ -55,6 +60,8 @@ impl Config {
 			.expect("failed to parse config file");
 		self.database_file = database_file.unwrap_or(read_config.database_file);
 		self.dmenu_command = dmenu_command.unwrap_or(read_config.dmenu_command);
+		self.dmenu_mark_search_args = mark_args.unwrap_or(read_config.dmenu_mark_search_args);
+		self.dmenu_tag_search_args = tag_args.unwrap_or(read_config.dmenu_tag_search_args);
 
 		assert!(self.database_file.to_str().unwrap() != "");
 	}
