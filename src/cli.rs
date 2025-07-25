@@ -277,7 +277,7 @@ fn update_cli(database: &Connection, config: &config::Config) {
 						Err(_) => { break; }
 					};
 					if selected_tag.ends_with('\n') { selected_tag.pop(); };
-					if selected_item.is_empty() { return; }
+					if selected_tag.is_empty() { break; }
 					sql::delete_tag(&database, update_id, selected_tag).expect("failed to delete the tag from the database");
 				} 
 			}
