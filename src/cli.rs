@@ -133,6 +133,11 @@ fn database_entry_cli() -> MarkArgs {
 	MarkArgs::try_parse_from(input_vec.iter()).unwrap()
 }
 
+fn clean_string(s: &mut String) -> String {
+	s.retain(|c| !r#"\t\n\0"#.contains(c));
+	s.to_string()
+}
+
 fn name_cli() -> String {
 	let mut name_buf: String = String::new();
 
@@ -141,7 +146,8 @@ fn name_cli() -> String {
 		println!("Enter the name of the new SchWiMark");
 		eprint!("name> ");
 		std::io::stdin().read_line(&mut name_buf).expect("Could not parse name input");
-		if name_buf.ends_with('\n') { name_buf.pop(); };
+		name_buf = clean_string(&mut name_buf);
+		if name_buf.ends_with('\n') { name_buf.pop(); }
 		if name_buf.is_empty() {
 			println!("name cannot be empty");
 			continue;
@@ -155,7 +161,7 @@ fn description_cli() -> String {
 	println!("Enter the description of the new SchWiMark");
 	eprint!("description> ");
 	std::io::stdin().read_line(&mut description_buf).expect("Could not parse description input");
-	description_buf.trim().to_string();
+	description_buf = clean_string(&mut description_buf);
 	if description_buf.ends_with('\n') { description_buf.pop(); };
 	description_buf
 }
@@ -168,7 +174,7 @@ fn url_cli() -> String {
 		println!("Enter the url or path of the new SchWiMark");
 		eprint!("url/path> ");
 		std::io::stdin().read_line(&mut url_buf).expect("Could not parse description input");
-		url_buf.trim().to_string();
+		url_buf = clean_string(&mut url_buf);
 		if url_buf.ends_with('\n') { url_buf.pop(); };
 		if url_buf.is_empty() {
 			println!("url cannot be empty");
@@ -184,7 +190,8 @@ fn application_cli() -> String {
 	println!("Enter the default application you want the SchwiMark to be opened with (leave empty to use default application):");
 	eprint!("application> ");
 	std::io::stdin().read_line(&mut application_buf).expect("Could not parse description input");
-	if application_buf.ends_with('\n') { application_buf.pop(); };
+	application_buf = clean_string(&mut application_buf);
+	if application_buf.ends_with('\n') { application_buf.pop(); }
 	application_buf
 }
 
@@ -196,8 +203,8 @@ fn tags_cli() -> Vec<String> {
 		println!("Enter a tag of the new SchWiMark enter nothing to continue");
 		eprint!("tag> ");
 		std::io::stdin().read_line(&mut tag_buf).expect("Could not parse the tag input");
-		if tag_buf.ends_with('\n') { tag_buf.pop(); };
-		tag_buf.trim().to_string();
+		tag_buf = clean_string(&mut tag_buf);
+		if tag_buf.ends_with('\n') { tag_buf.pop(); }
 
 		if tag_buf.is_empty() {
 			break;
@@ -225,12 +232,12 @@ fn update_cli(database: &Connection, config: &config::Config) {
 	
 	let mut menu_buf: String = String::with_capacity(5);
 	println!("What do you wish to change? (please enter the corresponding letters)\n\
-		name: n)\n\
-		description: d)\n\
-		url/path: u)\n\
-		default application: a)\n\
-		add a tag +)\n\
-		remove a tag -)\n\
+		n) name\n\
+		d) description\n\
+		u) url/path\n\
+		a) default application\n\
+		+) add a tag\n\
+		-) remove a tag\n\
 		Hint: if you want to update multiple field you can type both e.g. \"nu\" will enter both the name update menu and the url/path update menu"
 		);
 	eprint!("field> ");

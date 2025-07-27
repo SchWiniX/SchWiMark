@@ -1,6 +1,6 @@
 use open::{that, with_command};
 use std::collections::HashMap;
-use std::process::Stdio;
+use std::process::{exit, Stdio};
 use std::{fmt, path::PathBuf};
 use rusqlite::{params, Connection, Result};
 
@@ -374,11 +374,26 @@ pub fn open_mark(database: &Connection, id: i64) -> Result<()> {
 	)?;
 
 	if application.is_empty() {
-		that(&url).expect("failed to open");
+		match that(&url) {
+			Ok(_) => { }
+			Err(e) => {
+				println!("failed to open SchWiMark with error for default application \"{}\"", e);
+				exit(1)
+			}
+		}
 	} else {
 		match with_command(&url, application).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
 			Ok(_) => {}
-			Err(_) => { that(&url).expect("failed to open both with specified application and default application"); }
+			Err(e1) => { 
+				println!("failed to open SchWiMark with error for default application \"{}\"\nattempting to open via default application", e1);
+				match that(&url) {
+					Ok(_) => { }
+					Err(e2) => {
+						println!("failed to open SchWiMark with error for default application \"{}\"", e2);
+						exit(1)
+					}
+				}
+			}
 		}
 	}
 	Ok(())

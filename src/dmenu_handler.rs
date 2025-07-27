@@ -1,4 +1,4 @@
-use std::process::{Command, Stdio};
+use std::process::{exit, Command, Stdio};
 use crate::config;
 
 pub fn open_mark_search(config: &config::Config, entries: &mut Vec<String>) -> Result<String, String> {
@@ -34,13 +34,23 @@ fn open_search(config: &config::Config, entries: &mut Vec<String>, additional_dm
 	let mut dmenu_command_iter: Vec<String> = shlex::split(&config.dmenu_command).ok_or("error: Invalid quoting").unwrap();
 	let general_args: Vec<String> = dmenu_command_iter.split_off(1);
 
-	let dmenu_child = Command::new(&dmenu_command_iter[0])
+	let dmenu_child_res = Command::new(&dmenu_command_iter[0])
 		.args(general_args)
 		.args(additional_dmenu_args)
 		.stdin(Stdio::from(echo_out))
 		.stdout(Stdio::piped())
-		.spawn()
-		.expect("failed to execute the dmenu");
+		.spawn();
+
+	let dmenu_child;
+	match dmenu_child_res {
+		Ok(d) => {
+			dmenu_child = d;
+		}
+		Err(e) => {
+			println!("Executing \"{}\" failed with error: \"{}\"", dmenu_command_iter[0], e);
+			exit(1)
+		}
+	}
 
 	let output = dmenu_child.wait_with_output().expect("failed to get output of the dmenu command");
 	String::from_utf8(output.stdout).map_err(|e| e.to_string())
