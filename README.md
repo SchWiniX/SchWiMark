@@ -5,5 +5,5 @@ Possible dmenu implmenetation include [Fuzzel](https://codeberg.org/dnkl/fuzzel)
 
 Config/Database:
 ---------
-- The config file can be found in $XDG_CONFIG_HOME/schwimark (defaults to ~/.config/schwimark/config.toml).
-- The database file can be found in &XDG_DATA_HOME/schwimark (defaults to ~/.local/share/schwimark/schwimark.db).
+- The config file can be found in `$XDG_CONFIG_HOME/schwimark/config.toml` (defaults to `~/.config/schwimark/config.toml`).
+- The database file can be found in `&XDG_DATA_HOME/schwimark/schwimark.db` (defaults to `~/.local/share/schwimark/schwimark.db`).
